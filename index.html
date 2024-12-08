@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Book</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <h1>Phone Book App</h1>
+
+    <!-- Form to Add a New Contact -->
+    <form id="contactForm">
+    <input type="text" id="name" placeholder="Name" required>
+    <input type="text" id="mobile" placeholder="Mobile Number" required>
+    <input type="text" id="address" placeholder="Address" required>
+    <input type="text" id="whatsapp" placeholder="WhatsApp Number">
+    <input type="email" id="email" placeholder="Email ID">
+    <!-- Photo Options -->
+    <label>Choose Photo Option:</label>
+    <select id="photoOption">
+        <option value="file">Upload Photo</option>
+        <option value="camera">Take Photo</option>
+    </select>
+
+    <!-- File Upload -->
+    <input type="file" id="photoFile" accept="image/*" style="display: block; margin-top: 10px;">
+
+    <!-- Camera Section -->
+    <button type="button" id="startCameraBtn" style="display: none;">Start Camera</button>
+    <video id="camera" autoplay playsinline style="display: none; width: 100%; max-width: 300px;"></video>
+    <button type="button" id="capturePhotoBtn" style="display: none;">Capture Photo</button>
+    <canvas id="canvas" style="display: none;"></canvas>
+
+    <button type="submit">Add Contact</button>
+    <button type="reset" class="reset-btn">Reset</button>
+    </form>
+
+    <!-- Contact List -->
+    <div class="contacts" id="contactsList">
+    <!-- Contacts will be displayed here -->
+    </div>
+
+
+    <!-- QR Code Container -->
+    <h2 class="qr-title">QR Code</h2>
+    <div id="qrcode" style="margin-inline: auto;"></div>
+
+
+
+    <script>
+        const contactForm = document.getElementById("contactForm");
+        const contactsList = document.getElementById("contactsList");
+        const photoOption = document.getElementById("photoOption");
+        const photoFile = document.getElementById("photoFile");
+        const startCameraBtn = document.getElementById("startCameraBtn");
+        const capturePhotoBtn = document.getElementById("capturePhotoBtn");
+        const videoElement = document.getElementById("camera");
+        const canvasElement = document.getElementById("canvas");
+
+        let photoData = null; // To store the photo data (Base64)
+        let cameraStream = null; // To manage camera stream
+
+        const qrCodeContainer = document.getElementById("qrcode");
+
+        let qrCode; // Define QRCode variable globally
+
+        // Show/Hide options based on the user's selection
+        photoOption.addEventListener("change", () => {
+        if (photoOption.value === "file") {
+            photoFile.style.display = "block";
+            startCameraBtn.style.display = "none";
+            stopCamera();
+        } else if (photoOption.value === "camera") {
+            photoFile.style.display = "none";
+            startCameraBtn.style.display = "block";
+        }
+        });
+
+        // Start the Camera
+        startCameraBtn.addEventListener("click", async () => {
+        try {
+            stopCamera(); // Stop any previous stream
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" }, // Rear camera
+            audio: false
+            });
+            videoElement.srcObject = cameraStream;
+            videoElement.style.display = "block";
+            capturePhotoBtn.style.display = "block";
+        } catch (error) {
+            alert("Error accessing camera: " + error.message);
+        }
+        });
+
+        // Capture Photo
+        capturePhotoBtn.addEventListener("click", () => {
+        const context = canvasElement.getContext("2d");
+        canvasElement.width = videoElement.videoWidth;
+        canvasElement.height = videoElement.videoHeight;
+        context.drawImage(
+            videoElement,
+            0,
+            0,
+            canvasElement.width,
+            canvasElement.height
+        );
+        photoData = canvasElement.toDataURL("image/png");
+        alert("Photo captured successfully!");
+        stopCamera();
+        });
+
+        // Stop Camera
+        function stopCamera() {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach((track) => track.stop());
+            cameraStream = null;
+        }
+        videoElement.style.display = "none";
+        capturePhotoBtn.style.display = "none";
+        }
+
+        // Generate QR Code based on contact content
+        function generateQRCode(contact) {
+        const qrContent = `
+                        Name: ${contact.name}
+                        Mobile: ${contact.mobile}
+                        Address: ${contact.address}
+                        WhatsApp: ${contact.whatsapp}
+                        Email: ${contact.email}
+                    `;
+        // Create a new QRCode instance if it doesn't exist
+        if (!qrCode) {
+            qrCode = new QRCode(qrCodeContainer, {
+            width: 300,
+            height: 300
+            });
+        }
+        qrCode.clear(); // Clear previous QR Code
+        qrCode.makeCode(qrContent); // Generate new QR Code
+        }
+
+        // Handle Form Submission
+        contactForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+
+        const name = document.getElementById("name").value;
+        const mobile = document.getElementById("mobile").value;
+        const address = document.getElementById("address").value;
+        const whatsapp = document.getElementById("whatsapp").value;
+        const email = document.getElementById("email").value;
+
+        // Validate duplicate mobile number
+        if (isMobileNumberDuplicate(mobile)) {
+            alert("A contact with this mobile number already exists!");
+            return;
+        }
+
+        // Handle Photo (file upload or camera)
+        if (photoOption.value === "file" && photoFile.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+            photoData = e.target.result;
+            saveContact({ name, mobile, address, whatsapp, email, photo: photoData });
+            };
+            reader.readAsDataURL(photoFile.files[0]);
+        } else if (photoOption.value === "camera" && photoData) {
+            saveContact({ name, mobile, address, whatsapp, email, photo: photoData });
+        } else {
+            saveContact({ name, mobile, address, whatsapp, email, photo: null });
+        }
+
+        let contacts = { name, mobile, address, whatsapp, email };
+        generateQRCode(contacts); // Generate QR Code for this contact
+        });
+
+        // Check for Duplicate Mobile Number
+        function isMobileNumberDuplicate(mobile) {
+        const contacts = JSON.parse(localStorage.getItem("contacts")) || [];
+        return contacts.some((contact) => contact.mobile === mobile);
+        }
+
+        // Save Contact to LocalStorage
+        function saveContact(contact) {
+        let contacts = JSON.parse(localStorage.getItem("contacts")) || [];
+        contacts.push({ id: Date.now(), ...contact });
+        localStorage.setItem("contacts", JSON.stringify(contacts));
+        displayContacts();
+        contactForm.reset();
+        photoData = null;
+        }
+
+        function formatTimestamp(timestamp) {
+        const date = new Date(timestamp);
+
+        const day = String(date.getDate()).padStart(2, "0"); // Day with leading zero
+        const month = String(date.getMonth() + 1).padStart(2, "0"); // Month with leading zero (0-based index)
+        const year = date.getFullYear(); // Full year
+
+        let hours = date.getHours(); // Hours (0-23)
+        const minutes = String(date.getMinutes()).padStart(2, "0"); // Minutes with leading zero
+        const seconds = String(date.getSeconds()).padStart(2, "0"); // Seconds with leading zero
+
+        const ampm = hours >= 12 ? "PM" : "AM"; // Determine AM or PM
+        hours = hours % 12 || 12; // Convert hours to 12-hour format, 0 becomes 12
+        const formattedHours = String(hours).padStart(2, "0"); // Hours with leading zero
+
+        return `${day}/${month}/${year} ${formattedHours}:${minutes}:${seconds} ${ampm}`;
+        }
+
+        // Display All Contacts
+        function displayContacts() {
+        const contacts = JSON.parse(localStorage.getItem("contacts")) || [];
+        contactsList.innerHTML = "";
+
+        contacts.forEach((contact) => {
+            const contactDiv = document.createElement("div");
+            const formattedDate = formatTimestamp(contact.id);
+            contactDiv.innerHTML = `<div class="card">
+                            <div class="top">
+                                <div class="left">
+                                ${
+                                    contact.photo
+                                    ? `<img src="${contact.photo}" alt="Photo" />`
+                                    : ""
+                                }
+                                </div>
+                                <div class="right">
+                                    <small>Joined: ${formattedDate}</small>
+                                    <h2>${contact.name}</h2>
+                                    <p>${contact.address}</p>
+                                </div>
+                            </div>
+
+                            <div class="mid">
+                                <div class="right">
+                                    <small>Contact Details:</small>
+                                    <p><i class="bi bi-telephone"></i> ${
+                                    contact.mobile
+                                    } | <i class="bi bi-whatsapp"></i> ${
+            contact.whatsapp
+            }</p>
+                                    <p></p>
+                                    <p><i class="bi bi-envelope"></i> ${
+                                    contact.email
+                                    }</p>
+                                </div>
+                            </div>
+
+                            <div class="bottom">
+                                <button class="btn btn-close" onclick="deleteContact(${
+                                contact.id
+                                })">Delete</button>
+                                <a href="https://wa.me/${
+                                contact.whatsapp
+                                }" target="_blank" class="btn btn-whatsapp">WhatsApp</a>
+                                <a href="tel:${contact.mobile}" class="btn">Call</a>
+                            </div>
+                            </div>
+                        `;
+            contactsList.appendChild(contactDiv);
+        });
+        }
+
+        // Delete Contact
+        function deleteContact(id) {
+        let contacts = JSON.parse(localStorage.getItem("contacts")) || [];
+        contacts = contacts.filter((contact) => contact.id !== id);
+        localStorage.setItem("contacts", JSON.stringify(contacts));
+        displayContacts();
+        }
+
+        // Load Contacts on Page Load
+        window.onload = displayContacts;
+
+    </script>
+</body>
+</html>
